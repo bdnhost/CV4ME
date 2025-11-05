@@ -25,22 +25,20 @@ const CheckCircleIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
 const deepMergeBatch = (objects: Partial<UserKnowledgeBase>[]): Partial<UserKnowledgeBase> => {
     return objects.reduce((acc, obj) => {
         Object.keys(obj).forEach(key => {
-            const accValue = acc[key as keyof UserKnowledgeBase];
-            const objValue = obj[key as keyof UserKnowledgeBase];
-            
+            const typedKey = key as keyof UserKnowledgeBase;
+            const accValue = acc[typedKey];
+            const objValue = obj[typedKey];
+
             if (Array.isArray(accValue) && Array.isArray(objValue)) {
-                // @ts-ignore
-                acc[key] = [...new Set([...accValue, ...objValue])]; // Merge and keep unique
+                (acc as any)[typedKey] = [...new Set([...accValue, ...objValue])]; // Merge and keep unique
             } else if (accValue && typeof accValue === 'object' && objValue && typeof objValue === 'object' && !Array.isArray(accValue)) {
-                 // @ts-ignore
-                acc[key] = deepMergeBatch([accValue, objValue]);
+                (acc as any)[typedKey] = deepMergeBatch([accValue as any, objValue as any]);
             } else {
-                 // @ts-ignore
-                acc[key] = objValue;
+                (acc as any)[typedKey] = objValue;
             }
         });
         return acc;
-    }, {});
+    }, {} as Partial<UserKnowledgeBase>);
 };
 
 
@@ -54,9 +52,10 @@ const ProfileUploader: React.FC<ProfileUploaderProps> = ({ onProfileLoad }) => {
     if (!files || files.length === 0) return;
 
     setError(null);
-    
-    const jsonFiles = Array.from(files).filter(file => file.type === 'application/json');
-    const pdfFiles = Array.from(files).filter(file => file.type === 'application/pdf');
+
+    const fileArray = Array.from(files) as File[];
+    const jsonFiles = fileArray.filter(file => file.type === 'application/json');
+    const pdfFiles = fileArray.filter(file => file.type === 'application/pdf');
 
     if (jsonFiles.length + pdfFiles.length !== files.length) {
         setError('יש לבחור קבצים מסוג JSON או PDF בלבד.');
