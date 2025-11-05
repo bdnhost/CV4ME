@@ -96,7 +96,24 @@ const ResumePreviewContent: React.FC<ResumePreviewProps> = ({ profile }) => {
 
 const DownloadButton: React.FC<ResumePreviewProps> = ({ profile }) => {
     const [isDownloading, setIsDownloading] = useState(false);
-    
+    const [librariesAvailable, setLibrariesAvailable] = useState<boolean | null>(null);
+
+    // Check if required libraries are loaded on component mount
+    React.useEffect(() => {
+        const checkLibraries = () => {
+            const jsPDFConstructor = (window as any).jspdf?.jsPDF;
+            const html2canvas = (window as any).html2canvas;
+            setLibrariesAvailable(!!(jsPDFConstructor && html2canvas));
+        };
+
+        // Check immediately
+        checkLibraries();
+
+        // Check again after a delay in case scripts are still loading
+        const timer = setTimeout(checkLibraries, 1000);
+        return () => clearTimeout(timer);
+    }, []);
+
     const handleDownloadPdf = () => {
         setIsDownloading(true);
 
@@ -106,8 +123,12 @@ const DownloadButton: React.FC<ResumePreviewProps> = ({ profile }) => {
         const resumeElement = document.getElementById('resume-for-pdf');
 
         if (!resumeElement || !html2canvas || !jsPDFConstructor) {
-            console.error("PDF generation prerequisites not met. Check if jspdf and html2canvas scripts are loaded.");
-            alert("לא ניתן לייצא PDF כרגע. נסה לרענן את הדף.");
+            console.error("PDF generation prerequisites not met.", {
+                resumeElement: !!resumeElement,
+                html2canvas: !!html2canvas,
+                jsPDFConstructor: !!jsPDFConstructor
+            });
+            alert("לא ניתן לייצא PDF כרגע. נסה לרענן את הדף או בדוק את החיבור לאינטרנט.");
             setIsDownloading(false);
             return;
         }
@@ -146,14 +167,22 @@ const DownloadButton: React.FC<ResumePreviewProps> = ({ profile }) => {
     };
 
     return (
-        <button
-            onClick={handleDownloadPdf}
-            disabled={isDownloading}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-slate-500 text-white font-bold py-2 px-4 rounded-lg transition-colors"
-        >
-            <DownloadIcon className="w-5 h-5"/>
-            {isDownloading ? 'מכין PDF...' : 'הורד כ-PDF'}
-        </button>
+        <div>
+            <button
+                onClick={handleDownloadPdf}
+                disabled={isDownloading || librariesAvailable === false}
+                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-slate-500 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                title={librariesAvailable === false ? 'ספריות PDF לא זמינות. נסה לרענן את הדף.' : ''}
+            >
+                <DownloadIcon className="w-5 h-5"/>
+                {isDownloading ? 'מכין PDF...' : 'הורד כ-PDF'}
+            </button>
+            {librariesAvailable === false && (
+                <p className="mt-2 text-sm text-red-400">
+                    ⚠️ ספריות PDF לא נטענו. בדוק את החיבור לאינטרנט ורענן את הדף.
+                </p>
+            )}
+        </div>
     );
 };
 
