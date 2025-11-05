@@ -1,4 +1,7 @@
 import React, { useRef, useState } from 'react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
+import toast, { Toaster } from 'react-hot-toast';
 import type { TailoredResume } from '../types';
 
 const MailIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
@@ -96,50 +99,27 @@ const ResumePreviewContent: React.FC<ResumePreviewProps> = ({ profile }) => {
 
 const DownloadButton: React.FC<ResumePreviewProps> = ({ profile }) => {
     const [isDownloading, setIsDownloading] = useState(false);
-    const [librariesAvailable, setLibrariesAvailable] = useState<boolean | null>(null);
 
-    // Check if required libraries are loaded on component mount
-    React.useEffect(() => {
-        const checkLibraries = () => {
-            const jsPDFConstructor = (window as any).jspdf?.jsPDF;
-            const html2canvas = (window as any).html2canvas;
-            setLibrariesAvailable(!!(jsPDFConstructor && html2canvas));
-        };
-
-        // Check immediately
-        checkLibraries();
-
-        // Check again after a delay in case scripts are still loading
-        const timer = setTimeout(checkLibraries, 1000);
-        return () => clearTimeout(timer);
-    }, []);
-
-    const handleDownloadPdf = () => {
+    const handleDownloadPdf = async () => {
         setIsDownloading(true);
+        const loadingToast = toast.loading('מכין PDF...');
 
-        // Safely access libraries from the window object
-        const jsPDFConstructor = (window as any).jspdf?.jsPDF;
-        const html2canvas = (window as any).html2canvas;
-        const resumeElement = document.getElementById('resume-for-pdf');
+        try {
+            const resumeElement = document.getElementById('resume-for-pdf');
 
-        if (!resumeElement || !html2canvas || !jsPDFConstructor) {
-            console.error("PDF generation prerequisites not met.", {
-                resumeElement: !!resumeElement,
-                html2canvas: !!html2canvas,
-                jsPDFConstructor: !!jsPDFConstructor
+            if (!resumeElement) {
+                throw new Error('לא נמצא אלמנט הקורות חיים');
+            }
+
+            const canvas = await html2canvas(resumeElement, {
+                scale: 3, // Higher quality
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                logging: false
             });
-            alert("לא ניתן לייצא PDF כרגע. נסה לרענן את הדף או בדוק את החיבור לאינטרנט.");
-            setIsDownloading(false);
-            return;
-        }
 
-        html2canvas(resumeElement, {
-            scale: 2,
-            useCORS: true,
-            backgroundColor: '#ffffff'
-        }).then((canvas: any) => {
             const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDFConstructor('p', 'mm', 'a4');
+            const pdf = new jsPDF('p', 'mm', 'a4');
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = pdf.internal.pageSize.getHeight();
             const canvasWidth = canvas.width;
@@ -152,48 +132,45 @@ const DownloadButton: React.FC<ResumePreviewProps> = ({ profile }) => {
                 imgHeight = pdfHeight - 20;
                 imgWidth = imgHeight * ratio;
             }
-            
+
             const xOffset = (pdfWidth - imgWidth) / 2;
             const yOffset = 10;
 
             pdf.addImage(imgData, 'PNG', xOffset, yOffset, imgWidth, imgHeight);
             pdf.save(`${profile.personalInfo.fullName.replace(/\s/g, '_')}_CV.pdf`);
-        }).catch((err: any) => {
-            console.error("Error during PDF generation:", err);
-            alert("אירעה שגיאה במהלך יצירת ה-PDF.");
-        }).finally(() => {
+
+            toast.success('PDF הורד בהצלחה!', { id: loadingToast });
+        } catch (error) {
+            console.error("Error during PDF generation:", error);
+            toast.error('אירעה שגיאה במהלך יצירת ה-PDF', { id: loadingToast });
+        } finally {
             setIsDownloading(false);
-        });
+        }
     };
 
     return (
-        <div>
-            <button
-                onClick={handleDownloadPdf}
-                disabled={isDownloading || librariesAvailable === false}
-                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-slate-500 text-white font-bold py-2 px-4 rounded-lg transition-colors"
-                title={librariesAvailable === false ? 'ספריות PDF לא זמינות. נסה לרענן את הדף.' : ''}
-            >
-                <DownloadIcon className="w-5 h-5"/>
-                {isDownloading ? 'מכין PDF...' : 'הורד כ-PDF'}
-            </button>
-            {librariesAvailable === false && (
-                <p className="mt-2 text-sm text-red-400">
-                    ⚠️ ספריות PDF לא נטענו. בדוק את החיבור לאינטרנט ורענן את הדף.
-                </p>
-            )}
-        </div>
+        <button
+            onClick={handleDownloadPdf}
+            disabled={isDownloading}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-slate-500 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+        >
+            <DownloadIcon className="w-5 h-5"/>
+            {isDownloading ? 'מכין PDF...' : 'הורד כ-PDF'}
+        </button>
     );
 };
 
 
 const ResumePreview: React.FC<ResumePreviewProps> & { DownloadButton: React.FC<ResumePreviewProps> } = ({ profile }) => {
   const resumeRef = useRef<HTMLDivElement>(null);
-  
+
   return (
-    <div id="resume-for-pdf" ref={resumeRef} className="bg-white text-gray-800 p-8 rounded-md shadow-lg animate-fade-in">
-        <ResumePreviewContent profile={profile} />
-    </div>
+    <>
+      <Toaster position="top-center" />
+      <div id="resume-for-pdf" ref={resumeRef} className="bg-white text-gray-800 p-8 rounded-md shadow-lg animate-fade-in">
+          <ResumePreviewContent profile={profile} />
+      </div>
+    </>
   );
 };
 

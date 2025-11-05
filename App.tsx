@@ -1,7 +1,10 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import type { UserKnowledgeBase, TailoredResume, PdfDataPart } from './types';
 import { generateTailoredResume } from './services/geminiService';
+import { validateJobDescription, sanitizeText } from './schemas/validation';
+import { useLocalStorage } from './hooks/useLocalStorage';
 import ControlPanel from './components/ControlPanel';
 import ResumePreview from './components/ResumePreview';
 import Header from './components/Header';
@@ -35,12 +38,25 @@ const deepMerge = (target: any, source: any): UserKnowledgeBase => {
 
 
 const App: React.FC = () => {
-  const [knowledgeBase, setKnowledgeBase] = useState<UserKnowledgeBase | null>(null);
+  // Persisted state with localStorage
+  const [knowledgeBase, setKnowledgeBase] = useLocalStorage<UserKnowledgeBase | null>('cv4me-knowledge-base', null);
+  const [jobDescription, setJobDescription] = useLocalStorage<string>('cv4me-job-description', '');
+  const [generatedResume, setGeneratedResume] = useLocalStorage<TailoredResume | null>('cv4me-generated-resume', null);
+
+  // Non-persisted state (PDFs are too large for localStorage)
   const [pdfFiles, setPdfFiles] = useState<PdfDataPart[]>([]);
-  const [jobDescription, setJobDescription] = useState<string>('');
-  const [generatedResume, setGeneratedResume] = useState<TailoredResume | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Show restore notification on mount if there's saved data
+  useEffect(() => {
+    if (knowledgeBase || jobDescription || generatedResume) {
+      toast.success('הנתונים שלך נטענו מהשמירה האחרונה', {
+        duration: 3000,
+        icon: '💾',
+      });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleProfileLoad = useCallback((data: { jsonData?: Partial<UserKnowledgeBase>, pdfData?: PdfDataPart[] }) => {
     if (data.jsonData) {
@@ -56,19 +72,36 @@ const App: React.FC = () => {
   const handleGenerateResume = async () => {
     if ((!knowledgeBase && pdfFiles.length === 0) || !jobDescription) {
       setError('יש להעלות לפחות קובץ אחד (JSON או PDF) ולהזין תיאור משרה.');
+      toast.error('יש להעלות לפחות קובץ אחד ולהזין תיאור משרה');
       return;
     }
+
+    // Validate and sanitize job description
+    const sanitizedJobDesc = sanitizeText(jobDescription);
+    const validation = validateJobDescription(sanitizedJobDesc);
+
+    if (!validation.success) {
+      const errorMsg = validation.error.issues[0]?.message || 'תיאור המשרה לא תקין';
+      setError(errorMsg);
+      toast.error(errorMsg);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     setGeneratedResume(null);
 
+    const loadingToast = toast.loading('יוצר קורות חיים מותאמים...');
+
     try {
-      const tailoredResume = await generateTailoredResume(knowledgeBase, pdfFiles, jobDescription);
+      const tailoredResume = await generateTailoredResume(knowledgeBase, pdfFiles, sanitizedJobDesc);
       setGeneratedResume(tailoredResume);
-    // Fix: Corrected invalid `catch` syntax. The `=>` is not allowed in a catch block.
+      toast.success('קורות חיים נוצרו בהצלחה!', { id: loadingToast });
     } catch (err) {
       console.error(err);
-      setError('אירעה שגיאה בעת יצירת קורות החיים. אנא נסה שוב.');
+      const errorMsg = 'אירעה שגיאה בעת יצירת קורות החיים. אנא נסה שוב.';
+      setError(errorMsg);
+      toast.error(errorMsg, { id: loadingToast });
     } finally {
       setIsLoading(false);
     }

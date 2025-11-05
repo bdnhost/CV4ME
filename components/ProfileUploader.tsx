@@ -1,6 +1,8 @@
 
 import React, { useState, useRef } from 'react';
+import toast from 'react-hot-toast';
 import type { UserKnowledgeBase, PdfDataPart } from '../types';
+import { validateUserKnowledgeBase, validateFileSize, MAX_JSON_SIZE, MAX_PDF_SIZE, sanitizeText } from '../schemas/validation';
 
 interface ProfileUploaderProps {
   onProfileLoad: (data: { jsonData?: Partial<UserKnowledgeBase>, pdfData?: PdfDataPart[] }) => void;
@@ -64,12 +66,29 @@ const ProfileUploader: React.FC<ProfileUploaderProps> = ({ onProfileLoad }) => {
 
     const jsonReadPromises = jsonFiles.map(file => {
         return new Promise<Partial<UserKnowledgeBase>>((resolve, reject) => {
+            // Validate file size
+            if (!validateFileSize(file, MAX_JSON_SIZE)) {
+                reject(new Error(`קובץ ${file.name} גדול מדי (מקסימום 1MB)`));
+                return;
+            }
+
             const reader = new FileReader();
             reader.onload = (e) => {
                 try {
                     const text = e.target?.result as string;
                     const data = JSON.parse(text);
-                    resolve(data);
+
+                    // Validate JSON structure
+                    const validation = validateUserKnowledgeBase(data);
+                    if (!validation.success) {
+                        const errorMessages = validation.error.issues
+                            .map(err => `${err.path.join('.')}: ${err.message}`)
+                            .join(', ');
+                        reject(new Error(`קובץ ${file.name} לא עומד במבנה הנדרש: ${errorMessages}`));
+                        return;
+                    }
+
+                    resolve(validation.data);
                 } catch (err) {
                     reject(new Error(`קובץ JSON לא תקין: ${file.name}`));
                 }
@@ -81,6 +100,12 @@ const ProfileUploader: React.FC<ProfileUploaderProps> = ({ onProfileLoad }) => {
 
     const pdfReadPromises = pdfFiles.map(file => {
         return new Promise<PdfDataPart>((resolve, reject) => {
+            // Validate file size
+            if (!validateFileSize(file, MAX_PDF_SIZE)) {
+                reject(new Error(`קובץ PDF ${file.name} גדול מדי (מקסימום 5MB)`));
+                return;
+            }
+
             const reader = new FileReader();
             reader.onload = (e) => {
                 try {
@@ -109,11 +134,13 @@ const ProfileUploader: React.FC<ProfileUploaderProps> = ({ onProfileLoad }) => {
             const newPdfFiles = pdfFiles.map(f => ({ name: f.name, type: 'PDF' as const}));
             setLoadedFiles(prev => [...prev, ...newJsonFiles, ...newPdfFiles]
                 .filter((v,i,a)=>a.findIndex(t=>(t.name === v.name))===i)); // unique by name
+            toast.success(`${jsonFiles.length + pdfFiles.length} קבצים נטענו בהצלחה`);
         } else {
              throw new Error("לא נמצא מידע תקין בקבצים שהועלו.");
         }
     } catch (err: any) {
         setError(err.message || 'אחד או יותר מהקבצים אינו תקין.');
+        toast.error(err.message || 'אחד או יותר מהקבצים אינו תקין.');
     } finally {
         if (fileInputRef.current) {
             fileInputRef.current.value = "";
